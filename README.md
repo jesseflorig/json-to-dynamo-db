@@ -20,4 +20,6 @@ To easily load your JSON data into DynamoDB, follow these steps:
 ## Todo
 
 - [ ] Create the tables via CLI
-- [ ] Autogenerate table attributes by reading JSON
+- [ ] Clean up batch conversion logic
+- [ ] Increase `exec` options for `maxBuffer`
+- [ ] Fix slice bug (commented in `index.js`)
