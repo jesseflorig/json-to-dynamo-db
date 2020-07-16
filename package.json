@@ -1,0 +1,10 @@
+{
+  "name": "json-to-dynamo-db",
+  "author": "Jesse Florig <jesseflorig@gmail.com>",
+  "license": "MIT",
+  "version": "0.6.9",
+  "main": "index.js",
+  "scripts:" : {
+    "start" : "node index.js"
+  }
+}
