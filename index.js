@@ -1,6 +1,9 @@
 const path = require('path')
 const fs = require('fs')
 const { exec } = require('child_process')
+const AWS = require('aws-sdk')
+
+const dynamodb = new AWS.DynamoDB()
 
 const srcDirectory = path.join(__dirname, 'src')
 const outDirectory = path.join(__dirname, 'out')
@@ -18,10 +21,9 @@ fs.readdir(srcDirectory, (err, files) => {
 
   jsonFiles.forEach((file, fileIdx) => {
     const filePath = path.join(srcDirectory, file)
-    const outPath = path.join(outDirectory, file)
     const tableName = file.slice(0, file.length - 5)
 
-    console.log(`Converting "${file}" (${fileIdx} of ${jsonCount})...`)
+    console.log(`Converting "${file}" (${fileIdx + 1} of ${jsonCount})...`)
 
     // Convert to batch items
     fs.readFile(filePath, 'utf-8', (err, data) => {
@@ -75,30 +77,71 @@ fs.readdir(srcDirectory, (err, files) => {
         }
       })
 
-      // TODO: Figure out why I have to slice to get this to work 
-      // (succesfully did 20 at a time through all 207 test items)
-      const batchData = `{ "${tableName}" : ${JSON.stringify(batchItems.slice(0, 20))} }`
+      
+      const batchSets = chunkItems(batchItems, 25)
+      const setCount = batchSets.length
+      console.log(`Created ${setCount} chunks...`)
 
-      //Write the batch write json file
-      fs.writeFile(outPath, batchData, (err) => {
-        if(err){
-          return console.error(`Unable to write "${outPath}": ${err}`)
-        }
-        
-        // Execute AWS Batch write
-        const awsCommand = `aws dynamodb batch-write-item --request-items file://${outPath}`
-        exec(awsCommand, (err, stdout, stderr) => {
-          console.log(`Pushing "${tableName}" table data (${fileIdx} of ${jsonCount})...`)
+      // TODO: Import AWS profile
+      // createTable(tableName)
+
+      batchSets.forEach((setItems, setIdx) => {
+        const batchData = `{ "${tableName}" : ${JSON.stringify(setItems)} }`
+        const chunkFile = file.replace('.',`${setIdx}.`)
+        const outPath = path.join(outDirectory, chunkFile)
+
+        //Write the batch write json file
+        fs.writeFile(outPath, batchData, (err) => {
           if(err){
-            return console.error(`Error executing "${awsCommand}": ${err}`)
+            return console.error(`Unable to write "${outPath}": ${err}`)
           }
+          
+          // Execute AWS Batch write
+          const awsCommand = `aws dynamodb batch-write-item --request-items file://${outPath}`
+          exec(awsCommand, (err, stdout, stderr) => {
+            console.log(`Pushing "${tableName}" table data chunk (${setIdx + 1} of ${setCount})...`)
+            if(err){
+              return console.error(`Error executing "${awsCommand}": ${err}`)
+            }
 
-          console.log(stdout)
-          console.error(stderr)
-          console.log(`Finished pushing ${jsonCount} tables!`)
+            console.log(stdout)
+            console.error(stderr)
+          })
         })
       })
     })
   })
 })
 
+// Given an array and chunk size, recursively chunk the array
+function chunkItems(items, chunk, arr = []){
+  if(items.length > chunk){
+    const set = items.slice(0, chunk)
+    const rest = items.slice(chunk)
+    arr.push(set)
+    chunkItems(rest, chunk, arr)
+  } else {
+    arr.push(items)
+  }
+  return arr
+}
+
+function createTable(name){
+  const params = {
+    TableName: name,
+    KeySchema: [
+      { AttributeName: 'id', KeyType: 'HASH' }
+    ],
+    AttributeDefinitions: [
+      { AttributeName: 'id', AttributeType: 'S' }
+    ]
+  }
+
+  dynamodb.createTable(params, (err,data) => {
+    if(err){
+      console.error(`Unable to create ${name} table: ${err}`)
+    } else {
+      console.log(`Table "${name}" created succesfully: ${data}`)
+    }
+  })
+}
